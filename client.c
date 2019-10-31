@@ -6,42 +6,48 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <pthread.h>
+#include <unistd.h>
 
 #define SOCK_PATH "socketfile"
+#define MAX_MSG_SIZE 100
+#define MAX_BUFFER_SIZE 120
+#define MAX_NAME_SIZE 11
 
 int sockfd;
 
 void *sending_msg(void *value) {
-	char msg[100];
-	char buffer[150];
+	char msg[MAX_MSG_SIZE];
+	char buffer[MAX_BUFFER_SIZE];
 	char *name = (char *) value;
 	
 	while(1) {
 		printf("> ");
 		fflush(stdout);
-		fgets(msg, 100, stdin);
+		fgets(msg, MAX_MSG_SIZE, stdin);
 
-		if (strcmp(msg, "exit") == 0) {
-			break;
+		if (strcmp(msg, "quit") == 0) {
+			close(sockfd);
+			printf("Quitting the chatroom...");
+			exit(0);
 		}
 
 		else {
-			sprintf(buffer, "%s: %s\n", name, msg);
+			sprintf(buffer, "%s: %s", name, msg);
 			send(sockfd, buffer, strlen(buffer), 0);
 		}
 
-		bzero(msg, 100);
-		bzero(buffer, 150);
+		bzero(msg, MAX_MSG_SIZE);
+		bzero(buffer, MAX_BUFFER_SIZE);
 	}
 
 	return NULL;
 }
 
 void *receiving_msg(void *value) {
-	char msg[100];
+	char buffer[MAX_BUFFER_SIZE];
 
 	while(1) {
-		int n = recv(sockfd, msg, 100, 0);
+		int n = recv(sockfd, buffer, MAX_BUFFER_SIZE, 0);
 
 		if (n == 0) {
 			break;
@@ -53,12 +59,13 @@ void *receiving_msg(void *value) {
 		}
 
 		else {
-			printf("%s", msg);
+			printf("%s", buffer);
 			printf("> ");
   			fflush(stdout);
 		}
-	}
 
+		bzero(buffer, MAX_BUFFER_SIZE);
+	}
 
 	return NULL;
 }
@@ -66,12 +73,39 @@ void *receiving_msg(void *value) {
 int main() {
 	int len;
 	struct sockaddr_un server;
-	char name[50];
+	char name[MAX_NAME_SIZE];
 
-	printf("Enter your name: ");
-	fgets(name, 50, stdin);
+	// Ask for a valid username
 
-	// TODO: Add a check for name
+	printf("Enter your name (3 - 10 characters): ");
+	fgets(name, MAX_NAME_SIZE, stdin);
+	// printf("%s%d", name, (int)strlen(name));
+
+	// Remove trailing newline from the name
+
+	for (int i = 0; name[i] != '\0'; i++) {
+		if (name[i] == '\n') {
+			name[i] = '\0';
+			break;
+ 		}
+	}
+
+	while(strlen(name) < 3 || strlen(name) > 10) {
+		printf("Please enter a valid name (3 - 10 characters): ");
+		bzero(name, MAX_NAME_SIZE);
+		fgets(name, MAX_NAME_SIZE, stdin);
+
+			// Remove trailing newline from the name
+
+		for (int i = 0; name[i] != '\0'; i++) {
+			if (name[i] == '\n') {
+				name[i] = '\0';
+				break;
+			}
+		}
+	}
+
+	// Create socket fd
 
 	sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
 
@@ -87,18 +121,19 @@ int main() {
 
 	int n = connect(sockfd, (struct sockaddr *)&server, len);
 
-	printf("Connecting to server...\n\n");
+	printf("\nConnecting to server...\n\n");
 
 	if (n == -1) {
 		perror("connect");
 		exit(1);
 	}
 
-	printf("Connected to server\n");
+	printf("Connected to server\n\n");
 
-	send(sockfd, name, 50, 0);
+	send(sockfd, name, MAX_NAME_SIZE, 0);
 
-	printf("===WELCOME TO THE CHATROOM===\n");
+	printf("\n\n___WELCOME TO THE CHAT___\n\n");
+	printf("Do '@[name] [your message]' to send to one person\n\nDo '@all [your message]' to send to everyone\n\nEnter 'quit' to exit chatroom\n\n");
 
 	pthread_t sending_thread, receiving_thread;
 
@@ -121,31 +156,4 @@ int main() {
 	}
 
 	return 0;
-
-	// char msg[100];
-
-	// printf("> ");
-	// fgets(msg, 100, stdin);
-
-	// while (!feof(stdin)) {
-	// 	n = send(sockfd, msg, strlen(msg), 0);
-
-	// 	if (n == -1) {
-	// 		perror("send");
-	// 		exit(1);
-	// 	}
-
-	// 	n = recv(s, msg, 100, 0);
-
-	// 	if(n == -1) {
-	// 		perror("receive");
-	// 		exit(1);
-	// 	}
-
-	// 	else {
-	// 		msg[n] = '\0';
-	// 		printf("msg: %s", msg);
-	// 	}
-
-	// }
 }

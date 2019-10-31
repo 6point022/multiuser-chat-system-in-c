@@ -13,39 +13,91 @@
 
 #define SOCK_PATH "socketfile"
 #define MAX_USERS 10
+#define MAX_MSG_SIZE 100
+#define MAX_BUFFER_SIZE 111
+#define MAX_NAME_SIZE 11
 
 static _Atomic int user_count = 0; // look up more about this
 
 typedef struct {
 	int userid;
-	char name[50];
+	char name[MAX_NAME_SIZE];
 	int sockfd;
 	struct sockaddr_un addr;
 } user_t;
 
 user_t *list_of_users[MAX_USERS];
 
-void send_message(char *msg, int userid) {
-	for (int i = 0; i < MAX_USERS; i++) {
-		if (list_of_users[i] != NULL){
-			if (list_of_users[i]->userid != userid) {
-				int n = write(list_of_users[i]->sockfd, msg, strlen(msg));
+void send_message(char *msg, int userid, int msg_type) {
+	if (msg_type == 2) {
+		int start_index = 0;
+		printf("msg2 %s\n", msg);
 
-				if (n == -1) {
-					perror("write");
-					break;
+		for (int i = 0; msg[i] != '\0'; i++) {
+			printf("%c", msg[i]);
+			if (msg[i] == ':') {
+				start_index = i + 2;
+				break;
+			}
+		}
+
+		char receiver_name[MAX_NAME_SIZE];
+
+		// printf("%s", msg);
+
+		if (msg[start_index] == '@') {
+			int j = 0;
+
+			for (int i = start_index + 1; msg[i] != ' '; i++) {
+				receiver_name[j++] = msg[i];
+			}
+
+			receiver_name[j] = '\0';
+		}
+
+		else {
+			sprintf(receiver_name, "default");
+		}
+
+		printf("%s\n", receiver_name);
+
+		for (int i = 0; i < MAX_USERS; i++) {
+			if (list_of_users[i] != NULL){
+				if (list_of_users[i]->userid != userid && (strcmp(receiver_name, list_of_users[i]->name) == 0 || strcmp(receiver_name, "all") == 0)) {
+					int n = send(list_of_users[i]->sockfd, msg, strlen(msg), 0);
+
+					if (n == -1) {
+						perror("send");
+						break;
+					}
 				}
 			}
 		}
 	}
-	
+
+	else {
+		for (int i = 0; i < MAX_USERS; i++) {
+			if (list_of_users[i] != NULL){
+				if (list_of_users[i]->userid != userid) {
+					int n = send(list_of_users[i]->sockfd, msg, strlen(msg), 0);
+
+					if (n == -1) {
+						perror("send");
+						break;
+					}
+				}
+			}
+		}
+	}
+
+
 }
 
 void *welcome_user(void *new_user) {
 	user_t *user = (user_t *) new_user;
-	char buffer[100];
+	char buffer[MAX_BUFFER_SIZE];
 
-	int n = recv(user->sockfd, user->name, 100, 0), flag = 1;
+	int n = recv(user->sockfd, user->name, MAX_NAME_SIZE, 0), flag = 1;
 
 	if (n == -1) {
 		printf("Didn't enter name");
@@ -55,24 +107,26 @@ void *welcome_user(void *new_user) {
 	else {
 		sprintf(buffer, "%s has joined the chatroom.\n", user->name);
 		printf("%s", buffer);
-		send_message(buffer, user->userid);
+		send_message(buffer, user->userid, 1);
 	}
 
-	bzero(buffer, 100);
+	bzero(buffer, MAX_BUFFER_SIZE);
 
 	while(1) {
-		n = recv(user->sockfd, buffer, 100, 0);
+		n = recv(user->sockfd, buffer, MAX_BUFFER_SIZE, 0);
 
 		if(n == -1) {
 			perror("receive");
+			break;
 		}
 
-		else if(n == 0) {
-			printf("user left");
+		else if(n == 0 && !strcmp(buffer, "quit")) {
+			printf("%s left.", user->name);
+			break;
 		}
 
 		else {
-			send_message(buffer, user->userid);
+			send_message(buffer, user->userid, 2);
 			printf("%s", buffer);
 		}
 	}
@@ -106,7 +160,7 @@ int main() {
 		exit(1);
 	}
 
-	printf("===WELCOME TO THE CHATROOM===\n");
+	printf("\n\n___WELCOME TO THE CHAT___\n\n");
 
 	while (1) {
 		socklen_t remotelen = sizeof(remote);
@@ -138,7 +192,6 @@ int main() {
 		for (int i = 0; i < MAX_USERS; i++) {
 			if (list_of_users[i] == NULL) {
 				list_of_users[i] = new_user;
-				printf("Added new user to index %d", i);
 				break;
 			}
 		}
