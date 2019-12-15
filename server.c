@@ -17,7 +17,9 @@
 #define MAX_BUFFER_SIZE 111
 #define MAX_NAME_SIZE 11
 
-static _Atomic int user_count = 0; // look up more about this
+static int user_count = 0; // look up more about this
+
+// Create a structure that represents a user
 
 typedef struct {
 	int userid;
@@ -26,15 +28,20 @@ typedef struct {
 	struct sockaddr_un addr;
 } user_t;
 
+// An array of all users
+
 user_t *list_of_users[MAX_USERS];
 
+// Function to send message to users
+
 void send_message(char *msg, int userid, int msg_type) {
+
+	// Message type 1 is sent by a user and type 2 is if user joins or leaves
+
 	if (msg_type == 2) {
 		int start_index = 0;
-		printf("msg2 %s\n", msg);
 
 		for (int i = 0; msg[i] != '\0'; i++) {
-			printf("%c", msg[i]);
 			if (msg[i] == ':') {
 				start_index = i + 2;
 				break;
@@ -42,8 +49,6 @@ void send_message(char *msg, int userid, int msg_type) {
 		}
 
 		char receiver_name[MAX_NAME_SIZE];
-
-		// printf("%s", msg);
 
 		if (msg[start_index] == '@') {
 			int j = 0;
@@ -58,8 +63,6 @@ void send_message(char *msg, int userid, int msg_type) {
 		else {
 			sprintf(receiver_name, "default");
 		}
-
-		printf("%s\n", receiver_name);
 
 		for (int i = 0; i < MAX_USERS; i++) {
 			if (list_of_users[i] != NULL){
@@ -94,14 +97,18 @@ void send_message(char *msg, int userid, int msg_type) {
 }
 
 void *welcome_user(void *new_user) {
+
+	// Function for every user thread
+
 	user_t *user = (user_t *) new_user;
 	char buffer[MAX_BUFFER_SIZE];
 
-	int n = recv(user->sockfd, user->name, MAX_NAME_SIZE, 0), flag = 1;
+	// Receive the user's name using the recv blocking call
+
+	int n = recv(user->sockfd, user->name, MAX_NAME_SIZE, 0);
 
 	if (n == -1) {
 		printf("Didn't enter name");
-		flag = 1;
 	}
 
 	else {
@@ -112,16 +119,37 @@ void *welcome_user(void *new_user) {
 
 	bzero(buffer, MAX_BUFFER_SIZE);
 
+	char exit_condition[20];
+	sprintf(exit_condition, "%s: quit\n", user->name);
+
+	// Start the infinite loop to receive messages from user
+
 	while(1) {
 		n = recv(user->sockfd, buffer, MAX_BUFFER_SIZE, 0);
-
+	
 		if(n == -1) {
 			perror("receive");
 			break;
 		}
 
-		else if(n == 0 && !strcmp(buffer, "quit")) {
-			printf("%s left.", user->name);
+		else if(n == 0 || !strcmp(buffer, exit_condition)) {
+			sprintf(buffer, "%s left.\n", user->name);
+			printf("%s", buffer);
+			send_message(buffer, user->userid, 1);
+
+			// Remove user from the list on quitting
+
+			for(int i=0; i < MAX_USERS; ++i){
+				if(list_of_users[i]) {
+					if(list_of_users[i]->userid == user->userid) {
+						list_of_users[i] = NULL;
+						break;
+					}
+				}
+			}
+
+			user_count--;
+
 			break;
 		}
 
@@ -129,6 +157,8 @@ void *welcome_user(void *new_user) {
 			send_message(buffer, user->userid, 2);
 			printf("%s", buffer);
 		}
+
+		bzero(buffer, MAX_BUFFER_SIZE);
 	}
 	
 	return NULL;
@@ -139,21 +169,29 @@ int main() {
 	struct sockaddr_un local, remote;
 	pthread_t thread;
 
+	// Create a socket file descriptor
+
 	sockfd = socket(AF_UNIX, SOCK_STREAM, 0);
 
 	if (sockfd == -1) {
 		perror("socket");
 	}
 
+	// Add information about the Unix domain address
+
 	local.sun_family = AF_UNIX;
 	strcpy(local.sun_path, SOCK_PATH);
 	unlink(local.sun_path);
 	len = strlen(local.sun_path) + sizeof(local.sun_family);
 
+	// Bind the socket to an address
+
 	if (bind(sockfd, (struct sockaddr *)&local, len) == -1) {
 		perror("bind");
 		exit(1);
 	}
+
+	// Listen to incoming connections from client programs
 
 	if (listen(sockfd, 5) == -1) {
 		perror("listen");
@@ -164,6 +202,9 @@ int main() {
 
 	while (1) {
 		socklen_t remotelen = sizeof(remote);
+
+		// We create a new socked fd which is connected to the client
+
 		newsockfd = accept(sockfd, (struct sockaddr *)&remote, &remotelen);
 
 		if(newsockfd == -1) {
@@ -174,10 +215,9 @@ int main() {
 		// Check for maximum users
 
 		if (user_count >= MAX_USERS) {
-			printf("FAILED: Maximum users connected\n");
+			printf("Maximum users connected\n");
 			close(newsockfd);
 			continue;
-		
 		}
 
 		// Set user details
@@ -200,6 +240,5 @@ int main() {
 
 		pthread_create(&thread, NULL, &welcome_user, (void *) new_user);
 
-		sleep(1);
 	}
 }

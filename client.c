@@ -15,6 +15,8 @@
 
 int sockfd;
 
+// Entry function for sending thread
+
 void *sending_msg(void *value) {
 	char msg[MAX_MSG_SIZE];
 	char buffer[MAX_BUFFER_SIZE];
@@ -25,14 +27,22 @@ void *sending_msg(void *value) {
 		fflush(stdout);
 		fgets(msg, MAX_MSG_SIZE, stdin);
 
-		if (strcmp(msg, "quit") == 0) {
-			close(sockfd);
+		if (strcmp(msg, "quit\n") == 0) {
 			printf("Quitting the chatroom...");
+			sprintf(buffer, "%s: %s", name, msg);
+
+			// Send message about quitting
+
+			send(sockfd, buffer, strlen(buffer), 0);
+			sleep(1);
 			exit(0);
 		}
 
 		else {
 			sprintf(buffer, "%s: %s", name, msg);
+
+			// Send message to server which forwards it to the respective user
+
 			send(sockfd, buffer, strlen(buffer), 0);
 		}
 
@@ -43,10 +53,15 @@ void *sending_msg(void *value) {
 	return NULL;
 }
 
+// Entry function for receiving thread
+
 void *receiving_msg(void *value) {
 	char buffer[MAX_BUFFER_SIZE];
 
 	while(1) {
+		
+		// Receive messages
+
 		int n = recv(sockfd, buffer, MAX_BUFFER_SIZE, 0);
 
 		if (n == 0) {
@@ -95,7 +110,7 @@ int main() {
 		bzero(name, MAX_NAME_SIZE);
 		fgets(name, MAX_NAME_SIZE, stdin);
 
-			// Remove trailing newline from the name
+		// Remove trailing newline from the name
 
 		for (int i = 0; name[i] != '\0'; i++) {
 			if (name[i] == '\n') {
@@ -114,10 +129,14 @@ int main() {
 		exit(1);
 	}
 
+	// Add server's address information
+
 	server.sun_family = AF_UNIX;
 	strcpy(server.sun_path, SOCK_PATH);
 
 	len = strlen(server.sun_path) + sizeof(server.sun_family);
+
+	// Connect to the remote server's address
 
 	int n = connect(sockfd, (struct sockaddr *)&server, len);
 
@@ -130,6 +149,8 @@ int main() {
 
 	printf("Connected to server\n\n");
 
+	// Send name to server
+
 	send(sockfd, name, MAX_NAME_SIZE, 0);
 
 	printf("\n\n___WELCOME TO THE CHAT___\n\n");
@@ -137,12 +158,16 @@ int main() {
 
 	pthread_t sending_thread, receiving_thread;
 
+	// Create a thread to send messages
+
 	n = pthread_create(&sending_thread, NULL, (void *) sending_msg, name);
 
 	if (n  < 0) {
 		perror("thread creation 1");
 		exit(1);
 	}
+
+	// Create a thread to receive messages
 
 	n = pthread_create(&receiving_thread, NULL, (void *) receiving_msg, NULL);
 
